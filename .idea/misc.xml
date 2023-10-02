@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Black">
+    <option name="enabledOnReformat" value="true" />
+    <option name="enabledOnSave" value="true" />
+    <option name="executionMode" value="BINARY" />
+    <option name="pathToExecutable" value="D:\anaconda\Scripts\black.exe" />
+    <option name="sdkUUID" value="65804a6f-5b1e-4b60-a692-a3b23ba04c6f" />
+  </component>
+  <component name="ProjectRootManager" version="2" project-jdk-name="Poetry (dmzj_news) (4)" project-jdk-type="Python SDK" />
+</project>
