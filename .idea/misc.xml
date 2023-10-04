@@ -5,7 +5,7 @@
     <option name="enabledOnSave" value="true" />
     <option name="executionMode" value="BINARY" />
     <option name="pathToExecutable" value="D:\anaconda\Scripts\black.exe" />
-    <option name="sdkUUID" value="65804a6f-5b1e-4b60-a692-a3b23ba04c6f" />
+    <option name="sdkName" value="Poetry (dmzj_news)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Poetry (dmzj_news) (4)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Poetry (dmzj_news)" project-jdk-type="Python SDK" />
 </project>
