@@ -71,18 +71,16 @@ def get_args():
         type=str,
     )
     parser.add_argument(
-        "--https_proxy",
-        "-sp",
-        help="set https proxy",
-        default=config.get("RESERVE_ORIGINAL", True) == "True",
+        "--reserve",
+        "-r",
+        help="reserve original converted markdown file or not",
+        default=config.get("RESERVE_ORIGINAL", True) in ["True", "true", "1", True],
         type=bool,
     )
 
     # 解析命令行参数
-    args = parser.parse_args()
-    print(args)
-
-    return parser.parse_args()
+    params = parser.parse_args()
+    return params
 
 
 def request_url(url):
@@ -164,12 +162,19 @@ def make_article(article_info):
     content = html.xpath("//div[@class='news_content autoHeight']")[0]
     content_str = remove_trivial(content)
     md_content = md(content_str)
-    print(md_content)
-    with open(
-        f"{args.download_dir}/{article_info.get('title')}.md", "w+", encoding="utf-8"
-    ) as f:
-        f.write(md_content)
-    print_info(f"make article {article_info.get('title')} success")
+    if args.reserve:
+        with open(
+            f"{args.download_dir}/{article_info.get('title')}.md",
+            "w+",
+            encoding="utf-8",
+        ) as f:
+            f.write(md_content)
+        print_info(f"make article {article_info.get('title')} success")
+    else:
+        print_info(
+            f"transform content of article {article_info.get('title')} using llm"
+        )
+        # TODO add support for llm
 
 
 def process_article(count, start_index):

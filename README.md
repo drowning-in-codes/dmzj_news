@@ -32,3 +32,6 @@ python app.py
 
 - [ ] coroutine support using aiohttp
 - [ ] add more sites
+
+### In Progress
+- [ ] add llm support to transform content
