@@ -19,8 +19,6 @@ jobs:
         curl -sSL https://install.python-poetry.org | python -
     - name: Install dependencies
       run: |
-        poetry install
-        poetry shell
         poetry export -o --without-hashes requirements.txt
         pip install requirements.txt
         pip install pylint
