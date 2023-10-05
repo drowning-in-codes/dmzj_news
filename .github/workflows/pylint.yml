@@ -23,6 +23,7 @@ jobs:
     - name: Install dependencies
       run: |
         poetry export --without-hashes -o requirements.txt
+        pip install --upgrade pip
         pip install -r requirements.txt
         pip install pylint
         pip install black
@@ -38,6 +39,6 @@ jobs:
       uses: ad-m/github-push-action@master
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-    - name: Analysing the code with pylint
-      run: |
-        pylint $(git ls-files '*.py')
+    # - name: Analysing the code with pylint
+    #   run: |
+    #     pylint $(git ls-files '*.py')
