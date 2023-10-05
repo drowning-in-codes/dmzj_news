@@ -1,28 +1,91 @@
-import json
+import os
+from pathlib import Path
 
 import requests
-import asyncio
-from argparse import ArgumentParser
-import os
 from lxml import etree
-from configure import print_info, print_warning, print_error, config, logger
+from argparse import ArgumentParser
 from markdownify import markdownify as md
-from pathlib import Path
+
+from configure import print_info, print_warning, print_error, config, logger
 
 
 def get_args():
     """
     :return:
     """
-    parser = ArgumentParser(description="Get the number of words in a URL")
-    parser.add_argument("url", help="The URL to count words from", type=str)
+    parser = ArgumentParser(description="download the articles and images in the url")
     parser.add_argument(
-        "-w", "--workers", help="Number of workers to use", type=int, default=1
+        "--article",
+        "-a",
+        help="download count of articles",
+        type=int,
+        default=config.get("ARTICLE_COUNT", 3),
     )
+    parser.add_argument(
+        "--image",
+        "-i",
+        help="download count of imgs",
+        default=config.get("IMG_DOWNLOAD_PAGE_COUNT", 0),
+        type=int,
+    )
+    parser.add_argument(
+        "--article-outputdir",
+        "-ao",
+        help="The URL to count words from",
+        default=config.get("DOWNLOAD_DIR", "./download"),
+        type=str,
+    )
+    parser.add_argument(
+        "--image-outputdir",
+        "-io",
+        help="The URL to count words from",
+        default=config.get("DOWNLOAD_IMG_DIR", "./download/imgs"),
+        type=str,
+    )
+    parser.add_argument(
+        "--article_start_page",
+        "-as",
+        help="The Page where parse article start",
+        default=config.get("START_PAGE", 1),
+        type=int,
+    )
+    parser.add_argument(
+        "--img_start_page",
+        "-is",
+        help="The Page where parse imgs start",
+        default=config.get("START_IMG_PAGE", 1),
+        type=int,
+    )
+    parser.add_argument(
+        "--http_proxy",
+        "-p",
+        help="set http proxy",
+        default=config.get("http_proxy", None),
+        type=str,
+    )
+    parser.add_argument(
+        "--https_proxy",
+        "-sp",
+        help="set https proxy",
+        default=config.get("https_proxy", None),
+        type=str,
+    )
+    parser.add_argument(
+        "--https_proxy",
+        "-sp",
+        help="set https proxy",
+        default=config.get("RESERVE_ORIGINAL", True) == "True",
+        type=bool,
+    )
+
+    # 解析命令行参数
+    args = parser.parse_args()
+    print(args)
+
     return parser.parse_args()
 
 
-def request_url(url, proxy=None):
+def request_url(url):
     """
     :param url:
     :param proxy:
@@ -49,6 +112,7 @@ def parser_page(html_doc: str, count: int, index: int):
     print_info(f"page {index} has {length_per_page} articles...\nstart parsing...")
     for idx, news in enumerate(page_news_list):
         if idx >= count:
+            print_info(f"page:{index}| parse {idx+1} article,exit...")
             break
         print_info(f"parse {idx+1} article")
         title = news.xpath(".//h3/a/text()")[0]
@@ -62,11 +126,10 @@ def parser_page(html_doc: str, count: int, index: int):
         make_article(article_info)
     if length_per_page < count:
         next_page = html.xpath("//div[@class='page']/a[@class='next']/@href")[0]
-        next_page_url = f"{os.getenv('URL')}{next_page}"
+        next_page_url = f"{config.get('URL')}{next_page}"
         print_info(f"next page url is {next_page_url}")
         res = request_url(next_page_url)
         parser_page(res, count - length_per_page, index + 1)
-        print(next_page_url)
 
 
 def remove_trivial(html_doc: etree.Element):
@@ -103,7 +166,7 @@ def make_article(article_info):
     md_content = md(content_str)
     print(md_content)
     with open(
-        f"{download_dir}/{article_info.get('title')}.md", "w+", encoding="utf-8"
+        f"{args.download_dir}/{article_info.get('title')}.md", "w+", encoding="utf-8"
     ) as f:
         f.write(md_content)
     print_info(f"make article {article_info.get('title')} success")
@@ -115,7 +178,10 @@ def process_article(count, start_index):
     :param start_index:
     :return:
     """
-    url = os.getenv("URL")
+    if count <= 0:
+        print_info("parse article count is less than 0,exit...")
+        return
+    url = config.get("URL")
     res = request_url(url)
     parser_page(res, count, start_index)
 
@@ -144,40 +210,63 @@ def get_transform(content):
     :param content:
     :return:
     """
-    user_prompt = os.getenv("USER_PROMPT")
-    llm_api = os.getenv("LLM_API")
+    user_prompt = config.get("USER_PROMPT")
+    llm_api = config.get("LLM_API")
     data = {"user_prompt": user_prompt, "content": content}
     res = requests.get(llm_api, data=data)
     if res.status_code == 200:
         process_available_models(res.json())
 
 
-def request_img(img_page_count, index):
+def process_img(img_page_count, start_index):
     """
+    :param start_index:
     :param img_page_count:
     :return:
     """
-    img_url = os.getenv("IMG_DOWNLOAD_URL")
-    res = request_url(img_url)
-    html = etree.HTML(res)
+    if img_page_count <= 0:
+        print_info("parse img count is less than 0,exit...")
+        return
+    url = config.get("IMG_DOWNLOAD_URL")
+    res = request_url(url)
+    count = args.img_download_page_count
+    request_img(res, count, start_index)
+
+
+def request_img(html_doc, img_page_count, index):
+    """
+    :param html_doc:
+    :param index:
+    :param img_page_count:
+    :return:
+    """
+    html = etree.HTML(html_doc)
     img_list = html.xpath("//div[@class='briefnews_con']")[0]
     img_per_page = len(img_list)
     print_info(f"page {index} has {img_per_page} images...\nstart parsing...")
     for idx, img_url in enumerate(img_list):
+        if idx >= img_page_count:
+            print_info(f"page:{index}| parse {idx+1} image,exit...")
+            break
         print_info(f"parse {idx+1} images")
         title = img_url.xpath(".//h3/a/text()")[0]
         img_url = img_url.xpath(".//h3/a/@href")[0]
         print_info(f"image url is {img_url}")
         logger.info(f"title:{title}|image url:{img_url}")
         parse_img(title, img_url)
+    if img_page_count > img_per_page:
+        next_page = html.xpath("//div[@class='page']/a[@class='next']/@href")[0]
+        next_page_url = f"{args.IMG_URL}{next_page}"
+        print_info(f"next page url is {next_page_url}")
+        res = request_url(next_page_url)
+        request_img(res, img_page_count - img_per_page, index + 1)
 
 
-def download_img(img_url, dir_path, title, proxy=None):
+def download_img(img_url, dir_path, title):
     """
     :param dir_path:
     :param img_url:
     :param title:
-    :param proxy:
     :return:
     """
     res = requests.get(img_url, headers=config.get("headers"), proxy=proxy)
@@ -195,6 +284,11 @@ def download_img(img_url, dir_path, title, proxy=None):
 
 
 def parse_img(file_title, img_url):
+    """
+    :param file_title:
+    :param img_url:
+    :return:
+    """
     res = request_url(img_url)
     html = etree.HTML(res)
     imgs = html.xpath("//div[@class='news_content_con']//p/img/@src")
@@ -202,13 +296,17 @@ def parse_img(file_title, img_url):
     for img, title in zip(imgs, title_img):
         print_info(f"image url is {img}")
         logger.info(f"title:{title}|image url:{img}")
-        dir_path = os.path.join(download_img_dir, file_title)
+        dir_path = os.path.join(args.download_img_dir, file_title)
         download_img(img, dir_path, title)
 
 
 if __name__ == "__main__":
-    download_dir = os.getenv("DOWNLOAD_DIR")
-    article_count = int(os.getenv("ARTICLE_COUNT"))
-    start_page = int(os.getenv("START_PAGE"))
-    process_article(article_count, start_page)
-    download_img_dir = os.getenv("DOWNLOAD_IMG_DIR")
+    # parse args
+    args = get_args()
+    proxy = {
+        "http": config.get("http_proxy"),
+        "https": config.get("https_proxy"),
+    }
+    # process article and imgs
+    process_article(args.article_count, args.start_page)
+    process_img(args.img_download_page_count, args.start_img_page)

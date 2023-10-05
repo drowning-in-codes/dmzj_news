@@ -24,11 +24,14 @@ def print_error(error: str):
 
 # console setting
 console = Console()
+
+# config setting
 config = {
     "headers": {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/117.0.0.0 Safari/537.36 Edg/117.0.2045.36"
-    }
+    },
+    **os.environ,
 }
 
 
@@ -48,6 +51,7 @@ file_handler = logging.FileHandler(
 # set formatter
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 file_handler.setFormatter(formatter)
+
 # set logger
 logger = logging.getLogger(__name__)
 logger.addHandler(file_handler)
