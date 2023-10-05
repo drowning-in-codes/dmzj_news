@@ -7,9 +7,13 @@ import os
 from lxml import etree
 from configure import print_info, print_warning, print_error, config, logger
 from markdownify import markdownify as md
+from pathlib import Path
 
 
 def get_args():
+    """
+    :return:
+    """
     parser = ArgumentParser(description="Get the number of words in a URL")
     parser.add_argument("url", help="The URL to count words from", type=str)
     parser.add_argument(
@@ -18,15 +22,26 @@ def get_args():
     return parser.parse_args()
 
 
-def request_url(article_url, proxy=None):
-    response = requests.get(article_url, headers=config.get("headers"), proxies=proxy)
+def request_url(url, proxy=None):
+    """
+    :param url:
+    :param proxy:
+    :return:
+    """
+    response = requests.get(url, headers=config.get("headers"), proxies=proxy)
     if response.status_code != 200:
-        print_warning(f"request url {article_url} failed")
-        logger.warning(f"request url {article_url} failed")
+        print_warning(f"request url {url} failed")
+        logger.warning(f"request url {url} failed")
     return response.text
 
 
 def parser_page(html_doc: str, count: int, index: int):
+    """
+    :param html_doc:
+    :param count:
+    :param index:
+    :return:
+    """
     html = etree.HTML(html_doc)
     page_news_list = html.xpath("//div[@class='briefnews_con_li']")
     length_per_page = len(page_news_list)
@@ -55,6 +70,10 @@ def parser_page(html_doc: str, count: int, index: int):
 
 
 def remove_trivial(html_doc: etree.Element):
+    """
+    :param html_doc:
+    :return:
+    """
     for ele in html_doc.xpath("./div[contains(@class,'news_content_head')]")[0]:
         if ele.attrib.get("class") == "news_content_info":
             ele.getparent().remove(ele)
@@ -69,6 +88,10 @@ def remove_trivial(html_doc: etree.Element):
 
 
 def make_article(article_info):
+    """
+    :param article_info:
+    :return:
+    """
     href = article_info.get("href")
     if href is None:
         print_warning(f"article {article_info.get('title')} href is None")
@@ -87,12 +110,21 @@ def make_article(article_info):
 
 
 def process_article(count, start_index):
+    """
+    :param count:
+    :param start_index:
+    :return:
+    """
     url = os.getenv("URL")
     res = request_url(url)
     parser_page(res, count, start_index)
 
 
 def process_available_models(res):
+    """
+    :param res:
+    :return:
+    """
     for i, r in enumerate(res):
         site = r.get["site"]
         model = ",".join(r.get["model"])
@@ -104,10 +136,14 @@ def process_available_models(res):
         input(f"please choose a model to transform(index,default 1):{models}")
     )
     model = models_list[model_idx - 1]
-    return site, model
+    return res[site_idx - 1].get["site"], model
 
 
 def get_transform(content):
+    """
+    :param content:
+    :return:
+    """
     user_prompt = os.getenv("USER_PROMPT")
     llm_api = os.getenv("LLM_API")
     data = {"user_prompt": user_prompt, "content": content}
@@ -116,8 +152,63 @@ def get_transform(content):
         process_available_models(res.json())
 
 
+def request_img(img_page_count, index):
+    """
+    :param img_page_count:
+    :return:
+    """
+    img_url = os.getenv("IMG_DOWNLOAD_URL")
+    res = request_url(img_url)
+    html = etree.HTML(res)
+    img_list = html.xpath("//div[@class='briefnews_con']")[0]
+    img_per_page = len(img_list)
+    print_info(f"page {index} has {img_per_page} images...\nstart parsing...")
+    for idx, img_url in enumerate(img_list):
+        print_info(f"parse {idx+1} images")
+        title = img_url.xpath(".//h3/a/text()")[0]
+        img_url = img_url.xpath(".//h3/a/@href")[0]
+        print_info(f"image url is {img_url}")
+        logger.info(f"title:{title}|image url:{img_url}")
+        parse_img(title, img_url)
+
+
+def download_img(img_url, dir_path, title, proxy=None):
+    """
+    :param dir_path:
+    :param img_url:
+    :param title:
+    :param proxy:
+    :return:
+    """
+    res = requests.get(img_url, headers=config.get("headers"), proxy=proxy)
+    if res.status_code != 200:
+        print_warning(f"request url {img_url} failed")
+        logger.warning(f"request url {img_url} failed")
+    if not Path(dir_path).exists():
+        print_info(f"dir {dir_path} doesn't exists,create it...")
+        logger.info(f"dir {dir_path} doesn't exists,create it...")
+        Path(dir_path).mkdir(parents=True)
+    with open(os.path.join(dir_path, title), "wb") as f:
+        f.write(res.content)
+    print_info(f"download image {title} success")
+    logger.info(f"download image {title} success")
+
+
+def parse_img(file_title, img_url):
+    res = request_url(img_url)
+    html = etree.HTML(res)
+    imgs = html.xpath("//div[@class='news_content_con']//p/img/@src")
+    title_img = html.xpath("//div[@class='news_content_con']//p/img/@title")
+    for img, title in zip(imgs, title_img):
+        print_info(f"image url is {img}")
+        logger.info(f"title:{title}|image url:{img}")
+        dir_path = os.path.join(download_img_dir, file_title)
+        download_img(img, dir_path, title)
+
+
 if __name__ == "__main__":
     download_dir = os.getenv("DOWNLOAD_DIR")
     article_count = int(os.getenv("ARTICLE_COUNT"))
     start_page = int(os.getenv("START_PAGE"))
     process_article(article_count, start_page)
+    download_img_dir = os.getenv("DOWNLOAD_IMG_DIR")
