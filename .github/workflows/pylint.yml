@@ -1,6 +1,9 @@
-name: Pylint
+name: format&lint
 
-on: [push]
+on: 
+  push:
+    branches:
+    - main 
 
 jobs:
   build:
@@ -20,8 +23,21 @@ jobs:
     - name: Install dependencies
       run: |
         poetry export --without-hashes -o requirements.txt
-        pip install requirements.txt
+        pip install -r requirements.txt
         pip install pylint
+        pip install black
+    - name: Format code with Black
+      run: black .
+    - name: Commit changes
+      run: |
+        git config --local user.name "proanimer"
+        git config --local user.email "1322767102@qq.com"
+        git add .
+        git commit -m "Apply Black code formatting" || echo "No changes to commit"
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
     - name: Analysing the code with pylint
       run: |
         pylint $(git ls-files '*.py')
