@@ -1,3 +1,6 @@
+"""
+@description: download the articles and images in the url
+"""
 import os
 from pathlib import Path
 
@@ -5,8 +8,8 @@ import requests
 from lxml import etree
 from argparse import ArgumentParser
 from markdownify import markdownify as md
-
-from configure import print_info, print_warning, print_error, config, logger
+from tqdm import tqdm
+from configure import print_info, print_warning, config, logger
 
 
 def get_args():
@@ -86,10 +89,11 @@ def get_args():
 def request_url(url):
     """
     :param url:
-    :param proxy:
     :return:
     """
-    response = requests.get(url, headers=config.get("headers"), proxies=proxy)
+    response = requests.get(
+        url, headers=config.get("headers"), proxies=proxy, timeout=10
+    )
     if response.status_code != 200:
         print_warning(f"request url {url} failed")
         logger.warning(f"request url {url} failed")
@@ -108,20 +112,23 @@ def parser_page(html_doc: str, count: int, index: int):
     length_per_page = len(page_news_list)
     article_info = {}
     print_info(f"page {index} has {length_per_page} articles...\nstart parsing...")
-    for idx, news in enumerate(page_news_list):
-        if idx >= count:
-            print_info(f"page:{index}| parse {idx+1} article,exit...")
-            break
-        print_info(f"parse {idx+1} article")
-        title = news.xpath(".//h3/a/text()")[0]
-        tags = " ".join(news.xpath(".//div[@class='u_comfoot']/a/span/text()"))
-        href = news.xpath(".//h3/a/@href")[0]
-        publish_time = news.xpath(".//p[@class='head_con_p_o']/span[1]/text()")[0]
-        article_info["title"] = title
-        article_info["tags"] = tags
-        article_info["href"] = href
-        article_info["publish_time"] = publish_time
-        make_article(article_info)
+    with tqdm(total=length_per_page) as pbar:
+        for idx, news in enumerate(page_news_list):
+            if idx >= count:
+                print_info(f"page:{index}| parse {idx+1} article,exit...")
+                break
+            pbar.set_description(f"page {index+1} parsing|parse {idx+1} articles")
+            title = news.xpath(".//h3/a/text()")[0]
+            tags = " ".join(news.xpath(".//div[@class='u_comfoot']/a/span/text()"))
+            href = news.xpath(".//h3/a/@href")[0]
+            publish_time = news.xpath(".//p[@class='head_con_p_o']/span[1]/text()")[0]
+            article_info["title"] = title
+            article_info["tags"] = tags
+            article_info["href"] = href
+            article_info["publish_time"] = publish_time
+            make_article(article_info)
+            pbar.update()
+
     if length_per_page < count:
         next_page = html.xpath("//div[@class='page']/a[@class='next']/@href")[0]
         next_page_url = f"{config.get('URL')}{next_page}"
@@ -218,7 +225,9 @@ def get_transform(content):
     user_prompt = config.get("USER_PROMPT")
     llm_api = config.get("LLM_API")
     data = {"user_prompt": user_prompt, "content": content}
-    res = requests.get(llm_api, data=data)
+    res = requests.get(
+        llm_api, data=data, timeout=10, headers=config.get("headers"), proxies=proxy
+    )
     if res.status_code == 200:
         process_available_models(res.json())
 
@@ -249,16 +258,19 @@ def request_img(html_doc, img_page_count, index):
     img_list = html.xpath("//div[@class='briefnews_con']")[0]
     img_per_page = len(img_list)
     print_info(f"page {index} has {img_per_page} images...\nstart parsing...")
-    for idx, img_url in enumerate(img_list):
-        if idx >= img_page_count:
-            print_info(f"page:{index}| parse {idx+1} image,exit...")
-            break
-        print_info(f"parse {idx+1} images")
-        title = img_url.xpath(".//h3/a/text()")[0]
-        img_url = img_url.xpath(".//h3/a/@href")[0]
-        print_info(f"image url is {img_url}")
-        logger.info(f"title:{title}|image url:{img_url}")
-        parse_img(title, img_url)
+    with tqdm(total=img_per_page) as pbar:
+        for idx, img_url in enumerate(img_list):
+            if idx >= img_page_count:
+                print_info(f"page:{index}| parse {idx+1} image,exit...")
+                break
+            pbar.set_description(f"page {index+1} parsing|parse {idx+1} images")
+            title = img_url.xpath(".//h3/a/text()")[0]
+            img_url = img_url.xpath(".//h3/a/@href")[0]
+            print_info(f"image url is {img_url}")
+            logger.info(f"title:{title}|image url:{img_url}")
+            parse_img(title, img_url)
+            pbar.update()
+
     if img_page_count > img_per_page:
         next_page = html.xpath("//div[@class='page']/a[@class='next']/@href")[0]
         next_page_url = f"{args.IMG_URL}{next_page}"
@@ -274,7 +286,7 @@ def download_img(img_url, dir_path, title):
     :param title:
     :return:
     """
-    res = requests.get(img_url, headers=config.get("headers"), proxy=proxy)
+    res = requests.get(img_url, headers=config.get("headers"), proxy=proxy, timeout=10)
     if res.status_code != 200:
         print_warning(f"request url {img_url} failed")
         logger.warning(f"request url {img_url} failed")

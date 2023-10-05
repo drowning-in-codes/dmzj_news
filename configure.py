@@ -1,10 +1,10 @@
 import os
-
-from rich.console import Console
 import logging
-from dotenv import load_dotenv
 import time
 from pathlib import Path
+
+from rich.console import Console
+from dotenv import load_dotenv
 
 # load env
 load_dotenv(verbose=True)

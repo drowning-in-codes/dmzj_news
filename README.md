@@ -2,8 +2,8 @@
 # Project Name
 dmzj_news
 [EN](README.md)|[ZH](README_ZH.md)
-<br />
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<br />
 scape dmzj news and images and convert articles to markdown
 
 ## Features
