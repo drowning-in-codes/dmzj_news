@@ -56,6 +56,11 @@ START_IMG_PAGE = 1
 HTTP_PROXY = ""
 HTTPS_PROXY = ""
 ```
+### 打包
+下载pyinstaller
+```bash
+pyinstaller -F  -i dmzj.ico app.py
+```
 
 ### Todo
 

@@ -58,6 +58,12 @@ HTTP_PROXY = ""
 HTTPS_PROXY = ""
 ```
 
+### package
+download pyinstaller
+```bash
+pyinstaller -F  -i dmzj.ico app.py
+```
+
 ### Todo
 
 - [ ] coroutine support using aiohttp
