@@ -33,6 +33,7 @@ jobs:
       run: |
         git config --local user.name "proanimer"
         git config --local user.email "1322767102@qq.com"
+        git pull
         git add .
         git commit -m "Apply Black code formatting" || echo "No changes to commit"
     - name: Push changes
@@ -44,7 +45,7 @@ jobs:
          pylint --fail-under=6 $(git ls-files '*.py')
          tee pylint.txt
     - name: Upload pylint.txt as artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: pylint report
         path: pylint.txt
