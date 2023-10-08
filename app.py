@@ -18,28 +18,28 @@ def get_args():
     """
     parser = ArgumentParser(description="download the articles and images in the url")
     parser.add_argument(
-        "--article",
+        "--article_count",
         "-a",
         help="download count of articles",
         type=int,
-        default=config.get("ARTICLE_COUNT", 3),
+        default=config.get("ARTICLE_COUNT", 0),
     )
     parser.add_argument(
-        "--image",
+        "--image_download_page_count",
         "-i",
         help="download count of imgs",
         default=config.get("IMG_DOWNLOAD_PAGE_COUNT", 0),
         type=int,
     )
     parser.add_argument(
-        "--article-outputdir",
+        "--article_outputdir",
         "-ao",
         help="The URL to count words from",
         default=config.get("DOWNLOAD_DIR", "./download"),
         type=str,
     )
     parser.add_argument(
-        "--image-outputdir",
+        "--image_outputdir",
         "-io",
         help="The URL to count words from",
         default=config.get("DOWNLOAD_IMG_DIR", "./download/imgs"),
@@ -63,14 +63,14 @@ def get_args():
         "--http_proxy",
         "-p",
         help="set http proxy",
-        default=config.get("http_proxy", None),
+        default=config.get("HTTP_PROXY", None),
         type=str,
     )
     parser.add_argument(
         "--https_proxy",
         "-sp",
         help="set https proxy",
-        default=config.get("https_proxy", None),
+        default=config.get("HTTPS_PROXY", None),
         type=str,
     )
     parser.add_argument(
@@ -91,9 +91,7 @@ def request_url(url):
     :param url:
     :return:
     """
-    response = requests.get(
-        url, headers=config.get("headers"), proxies=proxy, timeout=10
-    )
+    response = get_rq(url)
     if response.status_code != 200:
         print_warning(f"request url {url} failed")
         logger.warning(f"request url {url} failed")
@@ -117,7 +115,7 @@ def parser_page(html_doc: str, count: int, index: int):
             if idx >= count:
                 print_info(f"page:{index}| parse {idx+1} article,exit...")
                 break
-            pbar.set_description(f"page {index+1} parsing|parse {idx+1} articles")
+            pbar.set_description(f"page {index} parsing|parse {idx+1} articles")
             title = news.xpath(".//h3/a/text()")[0]
             tags = " ".join(news.xpath(".//div[@class='u_comfoot']/a/span/text()"))
             href = news.xpath(".//h3/a/@href")[0]
@@ -171,7 +169,7 @@ def make_article(article_info):
     md_content = md(content_str)
     if args.reserve:
         with open(
-            f"{args.download_dir}/{article_info.get('title')}.md",
+            f"{args.article_outputdir}/{article_info.get('title')}.md",
             "w+",
             encoding="utf-8",
         ) as f:
@@ -225,9 +223,7 @@ def get_transform(content):
     user_prompt = config.get("USER_PROMPT")
     llm_api = config.get("LLM_API")
     data = {"user_prompt": user_prompt, "content": content}
-    res = requests.get(
-        llm_api, data=data, timeout=10, headers=config.get("headers"), proxies=proxy
-    )
+    res = get_rq(llm_api, data=data)
     if res.status_code == 200:
         process_available_models(res.json())
 
@@ -243,7 +239,7 @@ def process_img(img_page_count, start_index):
         return
     url = config.get("IMG_DOWNLOAD_URL")
     res = request_url(url)
-    count = args.img_download_page_count
+    count = args.image_download_page_count
     request_img(res, count, start_index)
 
 
@@ -263,7 +259,7 @@ def request_img(html_doc, img_page_count, index):
             if idx >= img_page_count:
                 print_info(f"page:{index}| parse {idx+1} image,exit...")
                 break
-            pbar.set_description(f"page {index+1} parsing|parse {idx+1} images")
+            pbar.set_description(f"page {index} parsing|parse {idx+1} images")
             title = img_url.xpath(".//h3/a/text()")[0]
             img_url = img_url.xpath(".//h3/a/@href")[0]
             print_info(f"image url is {img_url}")
@@ -279,6 +275,21 @@ def request_img(html_doc, img_page_count, index):
         request_img(res, img_page_count - img_per_page, index + 1)
 
 
+def get_rq(url, data=None):
+    """
+    :param data:
+    :param url:
+    :return:
+    """
+    if proxy:
+        res = requests.get(
+            url, headers=config.get("headers"), proxies=proxy, timeout=10, params=data
+        )
+    else:
+        res = requests.get(url, headers=config.get("headers"), timeout=100, params=data)
+    return res
+
+
 def download_img(img_url, dir_path, title):
     """
     :param dir_path:
@@ -286,7 +297,7 @@ def download_img(img_url, dir_path, title):
     :param title:
     :return:
     """
-    res = requests.get(img_url, headers=config.get("headers"), proxy=proxy, timeout=10)
+    res = get_rq(img_url)
     if res.status_code != 200:
         print_warning(f"request url {img_url} failed")
         logger.warning(f"request url {img_url} failed")
@@ -313,17 +324,37 @@ def parse_img(file_title, img_url):
     for img, title in zip(imgs, title_img):
         print_info(f"image url is {img}")
         logger.info(f"title:{title}|image url:{img}")
-        dir_path = os.path.join(args.download_img_dir, file_title)
+        dir_path = os.path.join(args.image_outputdir, file_title)
         download_img(img, dir_path, title)
+
+
+def check_proxy(p):
+    """
+    :param p:
+    :return:
+    """
+    ip = p.get("http", p.get("https", "")).split("//")[-1].split(":")[0]
+    if not ip:
+        print_warning(f"proxy {p} is invalid,use localhost instead")
+        logger.warning(f"proxy {p} is invalid,use localhost instead")
+        return False
+    try:
+        requests.get("https://www.baidu.com", proxies=p, timeout=10)
+    except Exception as e:
+        print_warning(f"proxy {p} is invalid,use localhost instead")
+        logger.warning(f"proxy {p} is invalid,use localhost instead")
+        return False
+    return True
 
 
 if __name__ == "__main__":
     # parse args
     args = get_args()
-    proxy = {
-        "http": config.get("http_proxy"),
-        "https": config.get("https_proxy"),
-    }
+    proxy = {"http": args.http_proxy, "https": args.https_proxy}
+    if not check_proxy(proxy):
+        proxy = None
+    print_info(f"proxy is {proxy}")
+    logger.info(f"proxy is {proxy}")
     # process article and imgs
-    process_article(args.article_count, args.start_page)
-    process_img(args.img_download_page_count, args.start_img_page)
+    process_article(args.article_count, args.article_start_page)
+    process_img(args.image_download_page_count, args.img_start_page)
