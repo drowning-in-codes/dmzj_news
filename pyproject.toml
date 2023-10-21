@@ -6,13 +6,14 @@ authors = ["drowning-in-codes <bukalala174@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.8.1"
+python = ">=3.8.1,<3.13"
 requests = "^2.31.0"
 lxml = "^4.9.3"
 python-dotenv = "^1.0.0"
 tqdm = "^4.66.1"
 rich = "^13.6.0"
 markdownify = "^0.11.6"
+pyinstaller = "^6.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pylint = "^3.0.0"

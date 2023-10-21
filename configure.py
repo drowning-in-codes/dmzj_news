@@ -36,7 +36,7 @@ config = {
 
 
 # download setting
-download_dir = os.getenv("DOWNLOAD_DIR")
+download_dir = os.getenv("DOWNLOAD_DIR") or "./download"
 Path(download_dir).mkdir(parents=True, exist_ok=True)
 
 # logger setting
