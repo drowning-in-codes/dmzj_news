@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 
 import requests
+import aiohttp
+import asyncio
 from lxml import etree
 from argparse import ArgumentParser
 from markdownify import markdownify as md
@@ -98,7 +100,7 @@ def request_url(url):
     return response.text
 
 
-def parser_page(html_doc: str, count: int, index: int):
+async def parser_page(html_doc: str, count: int, index: int):
     """
     :param html_doc:
     :param count:
@@ -108,6 +110,7 @@ def parser_page(html_doc: str, count: int, index: int):
     html = etree.HTML(html_doc)
     page_news_list = html.xpath("//div[@class='briefnews_con_li']")
     length_per_page = len(page_news_list)
+    article_infos = []
     article_info = {}
     print_info(f"page {index} has {length_per_page} articles...\nstart parsing...")
     with tqdm(total=length_per_page) as pbar:
@@ -124,15 +127,21 @@ def parser_page(html_doc: str, count: int, index: int):
             article_info["tags"] = tags
             article_info["href"] = href
             article_info["publish_time"] = publish_time
-            make_article(article_info)
+            article_infos.append(article_info)
             pbar.update()
+
+    tasks = []
+    for article_info in article_infos:
+        task = asyncio.ensure_future(make_article(article_info))
+        tasks.append(task)
+    await asyncio.gather(*tasks)
 
     if length_per_page < count:
         next_page = html.xpath("//div[@class='page']/a[@class='next']/@href")[0]
         next_page_url = f"{config.get('URL')}{next_page}"
         print_info(f"next page url is {next_page_url}")
         res = request_url(next_page_url)
-        parser_page(res, count - length_per_page, index + 1)
+        await parser_page(res, count - length_per_page, index + 1)
 
 
 def remove_trivial(html_doc: etree.Element):
@@ -153,7 +162,7 @@ def remove_trivial(html_doc: etree.Element):
     return content_str
 
 
-def make_article(article_info):
+async def make_article(article_info):
     """
     :param article_info:
     :return:
@@ -162,27 +171,30 @@ def make_article(article_info):
     if href is None:
         print_warning(f"article {article_info.get('title')} href is None")
         logger.warning(f"article {article_info.get('title')} href is None")
-    article_content = request_url(href)
-    html = etree.HTML(article_content)
-    content = html.xpath("//div[@class='news_content autoHeight']")[0]
-    content_str = remove_trivial(content)
-    md_content = md(content_str)
-    if args.reserve:
-        with open(
-            f"{args.article_outputdir}/{article_info.get('title')}.md",
-            "w+",
-            encoding="utf-8",
-        ) as f:
-            f.write(md_content)
-        print_info(f"make article {article_info.get('title')} success")
-    else:
-        print_info(
-            f"transform content of article {article_info.get('title')} using llm"
-        )
-        # TODO add support for llm
+    async with aiohttp.ClientSession() as session:
+        async with session.get(href, proxy=proxy) as res:
+            # article_content = request_url(href)
+            article_content = await res.text()
+            html = etree.HTML(article_content)
+            content = html.xpath("//div[@class='news_content autoHeight']")[0]
+            content_str = remove_trivial(content)
+            md_content = md(content_str)
+            if args.reserve:
+                with open(
+                    f"{args.article_outputdir}/{article_info.get('title')}.md",
+                    "w+",
+                    encoding="utf-8",
+                ) as f:
+                    f.write(md_content)
+                print_info(f"make article {article_info.get('title')} success")
+            else:
+                print_info(
+                    f"transform content of article {article_info.get('title')} using llm"
+                )
+                # TODO add support for llm
 
 
-def process_article(count, start_index):
+async def process_article(count, start_index):
     """
     :param count:
     :param start_index:
@@ -193,7 +205,7 @@ def process_article(count, start_index):
         return
     url = config.get("URL")
     res = request_url(url)
-    parser_page(res, count, start_index)
+    await parser_page(res, count, start_index)
 
 
 def process_available_models(res):
@@ -228,7 +240,7 @@ def get_transform(content):
         process_available_models(res.json())
 
 
-def process_img(img_page_count, start_index):
+async def process_img(img_page_count, start_index):
     """
     :param start_index:
     :param img_page_count:
@@ -239,11 +251,10 @@ def process_img(img_page_count, start_index):
         return
     url = config.get("IMG_DOWNLOAD_URL")
     res = request_url(url)
-    count = args.image_download_page_count
-    request_img(res, count, start_index)
+    await request_img(res, img_page_count, start_index)
 
 
-def request_img(html_doc, img_page_count, index):
+async def request_img(html_doc, img_page_count, index):
     """
     :param html_doc:
     :param index:
@@ -254,25 +265,35 @@ def request_img(html_doc, img_page_count, index):
     img_list = html.xpath("//div[@class='briefnews_con']")[0]
     img_per_page = len(img_list)
     print_info(f"page {index} has {img_per_page} images...\nstart parsing...")
-    with tqdm(total=img_per_page) as pbar:
-        for idx, img_url in enumerate(img_list):
-            if idx >= img_page_count:
-                print_info(f"page:{index}| parse {idx+1} image,exit...")
-                break
-            pbar.set_description(f"page {index} parsing|parse {idx+1} images")
-            title = img_url.xpath(".//h3/a/text()")[0]
-            img_url = img_url.xpath(".//h3/a/@href")[0]
-            print_info(f"image url is {img_url}")
-            logger.info(f"title:{title}|image url:{img_url}")
-            parse_img(title, img_url)
-            pbar.update()
+    titles = []
+    img_urls = []
+    pbar = tqdm(total=img_per_page)
+    for idx, img_url in enumerate(img_list):
+        if idx >= img_page_count:
+            print_info(f"page:{index}| parse {idx+1} image,exit...")
+            break
+        pbar.set_description(f"page {index} parsing|parse {idx+1} images")
+        title = img_url.xpath(".//h3/a/text()")[0]
+        img_url = img_url.xpath(".//h3/a/@href")[0]
+        titles.append(title)
+        img_urls.append(img_url)
+        print_info(f"image url is {img_url}")
+        logger.info(f"title:{title}|image url:{img_url}")
+        pbar.update()
+    pbar.close()
+
+    tasks = []
+    for title, img_url in zip(titles, img_urls):
+        task = asyncio.ensure_future(parse_img(title, img_url))
+        tasks.append(task)
+    await asyncio.gather(*tasks)
 
     if img_page_count > img_per_page:
         next_page = html.xpath("//div[@class='page']/a[@class='next']/@href")[0]
         next_page_url = f"{args.IMG_URL}{next_page}"
         print_info(f"next page url is {next_page_url}")
         res = request_url(next_page_url)
-        request_img(res, img_page_count - img_per_page, index + 1)
+        await request_img(res, img_page_count - img_per_page, index + 1)
 
 
 def get_rq(url, data=None):
@@ -290,28 +311,32 @@ def get_rq(url, data=None):
     return res
 
 
-def download_img(img_url, dir_path, title):
+async def download_img(img_url, dir_path, title):
     """
     :param dir_path:
     :param img_url:
     :param title:
     :return:
     """
-    res = get_rq(img_url)
-    if res.status_code != 200:
-        print_warning(f"request url {img_url} failed")
-        logger.warning(f"request url {img_url} failed")
-    if not Path(dir_path).exists():
-        print_info(f"dir {dir_path} doesn't exists,create it...")
-        logger.info(f"dir {dir_path} doesn't exists,create it...")
-        Path(dir_path).mkdir(parents=True)
-    with open(os.path.join(dir_path, title), "wb") as f:
-        f.write(res.content)
-    print_info(f"download image {title} success")
-    logger.info(f"download image {title} success")
+    # res = get_rq(img_url)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(img_url, proxy=proxy) as res:
+            code = res.status
+            if code != 200:
+                print_warning(f"request url {img_url} failed")
+                logger.warning(f"request url {img_url} failed")
+            if not Path(dir_path).exists():
+                print_info(f"dir {dir_path} doesn't exists,create it...")
+                logger.info(f"dir {dir_path} doesn't exists,create it...")
+                Path(dir_path).mkdir(parents=True)
+            content = await res.read()
+            with open(os.path.join(dir_path, title), "wb") as f:
+                f.write(content)
+            print_info(f"download image {title} success")
+            logger.info(f"download image {title} success")
 
 
-def parse_img(file_title, img_url):
+async def parse_img(file_title, img_url):
     """
     :param file_title:
     :param img_url:
@@ -319,13 +344,15 @@ def parse_img(file_title, img_url):
     """
     res = request_url(img_url)
     html = etree.HTML(res)
+    logger.info(f"download {file_title} images...")
+    print_info(f"download {file_title} images...")
     imgs = html.xpath("//div[@class='news_content_con']//p/img/@src")
     title_img = html.xpath("//div[@class='news_content_con']//p/img/@title")
     for img, title in zip(imgs, title_img):
         print_info(f"image url is {img}")
         logger.info(f"title:{title}|image url:{img}")
         dir_path = os.path.join(args.image_outputdir, file_title)
-        download_img(img, dir_path, title)
+        await download_img(img, dir_path, title)
 
 
 def check_proxy(p):
@@ -356,5 +383,10 @@ if __name__ == "__main__":
     print_info(f"proxy is {proxy}")
     logger.info(f"proxy is {proxy}")
     # process article and imgs
-    process_article(args.article_count, args.article_start_page)
-    process_img(args.image_download_page_count, args.img_start_page)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(
+        process_article(args.article_count, args.article_start_page)
+    )
+    loop.run_until_complete(
+        process_img(args.image_download_page_count, args.img_start_page)
+    )
