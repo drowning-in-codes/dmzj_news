@@ -66,7 +66,7 @@ pyinstaller -F  -i dmzj.ico app.py
 
 ### Todo
 
-- [ ] coroutine support using aiohttp
+- [ x ] coroutine support using aiohttp
 - [ ] add more sites
 
 ### In Progress
