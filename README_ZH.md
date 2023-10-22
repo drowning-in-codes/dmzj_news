@@ -64,7 +64,7 @@ pyinstaller -F  -i dmzj.ico app.py
 
 ### Todo
 
-- [ x ] 使用aiohttp支持协程
+- [x] 使用aiohttp支持协程
 - [ ] 增加更多网站
 
 ### In Progress
