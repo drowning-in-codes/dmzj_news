@@ -244,10 +244,8 @@ async def get_transform(content):
     """
     openrouter_key = config.get("OPENROUTER_KEY")
     if not openrouter_key:
-        print_warning("openrouter key is None,please set use localhost instead in .env")
-        logger.warning(
-            "openrouter key is None,please set use localhost instead in .env"
-        )
+        print_warning("openrouter key is None,please set key  in .env")
+        logger.warning("openrouter key is None,please set key in .env")
         return
     user_prompt = config.get("USER_PROMPT", "作为一名动画评鉴大师,请改编下面一段话使其有趣通俗易懂")
     llm_api = config.get("LLM_API")
