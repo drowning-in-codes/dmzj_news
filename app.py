@@ -1,6 +1,7 @@
 """
 @description: download the articles and images in the url
 """
+import json
 import os
 from pathlib import Path
 
@@ -111,13 +112,13 @@ async def parser_page(html_doc: str, count: int, index: int):
     page_news_list = html.xpath("//div[@class='briefnews_con_li']")
     length_per_page = len(page_news_list)
     article_infos = []
-    article_info = {}
     print_info(f"page {index} has {length_per_page} articles...\nstart parsing...")
     with tqdm(total=length_per_page) as pbar:
         for idx, news in enumerate(page_news_list):
             if idx >= count:
                 print_info(f"page:{index}| parse {idx+1} article,exit...")
                 break
+            article_info = {}
             pbar.set_description(f"page {index} parsing|parse {idx+1} articles")
             title = news.xpath(".//h3/a/text()")[0]
             tags = " ".join(news.xpath(".//div[@class='u_comfoot']/a/span/text()"))
@@ -180,18 +181,46 @@ async def make_article(article_info):
             content_str = remove_trivial(content)
             md_content = md(content_str)
             if args.reserve:
-                with open(
-                    f"{args.article_outputdir}/{article_info.get('title')}.md",
-                    "w+",
-                    encoding="utf-8",
-                ) as f:
-                    f.write(md_content)
-                print_info(f"make article {article_info.get('title')} success")
+                try:
+                    with open(
+                        f"{args.article_outputdir}/{article_info.get('title')}.md",
+                        "w+",
+                        encoding="utf-8",
+                    ) as f:
+                        f.write(md_content)
+                    print_info(
+                        f"make original article {article_info.get('title')} success"
+                    )
+                except Exception as e:
+                    print_warning(
+                        f"make original article {article_info.get('title')} failed,{e}"
+                    )
+                    logger.warning(
+                        f"make original article {article_info.get('title')} failed,{e}"
+                    )
             else:
                 print_info(
                     f"transform content of article {article_info.get('title')} using llm"
                 )
-                # TODO add support for llm
+            transform_msg = await get_transform(content_str)
+            md_content = md(transform_msg)
+            try:
+                with open(
+                    f"{args.article_outputdir}/{article_info.get('title')}_transformed.md",
+                    "w+",
+                    encoding="utf-8",
+                ) as f:
+                    f.write(md_content)
+                    print_info(
+                        f"make transformed article {article_info.get('title')} success"
+                    )
+            except Exception as e:
+                print_warning(
+                    f"make transformed article {article_info.get('title')} failed,{e}"
+                )
+                logger.error(
+                    f"make transformed article {article_info.get('title')} failed,{e}"
+                )
 
 
 async def process_article(count, start_index):
@@ -208,36 +237,42 @@ async def process_article(count, start_index):
     await parser_page(res, count, start_index)
 
 
-def process_available_models(res):
-    """
-    :param res:
-    :return:
-    """
-    for i, r in enumerate(res):
-        site = r.get["site"]
-        model = ",".join(r.get["model"])
-        print_info(f"index {i+1}:site:{site}, allowed models:{model}")
-    site_idx = int(input("please choose a site to transform(index,default 1):"))
-    models_list = res[site_idx - 1].get("model")
-    models = ", ".join(str(i + 1) + ":" + model for i, model in enumerate(models_list))
-    model_idx = int(
-        input(f"please choose a model to transform(index,default 1):{models}")
-    )
-    model = models_list[model_idx - 1]
-    return res[site_idx - 1].get["site"], model
-
-
-def get_transform(content):
+async def get_transform(content):
     """
     :param content:
     :return:
     """
-    user_prompt = config.get("USER_PROMPT")
+    openrouter_key = config.get("OPENROUTER_KEY")
+    if not openrouter_key:
+        print_warning("openrouter key is None,please set use localhost instead in .env")
+        logger.warning(
+            "openrouter key is None,please set use localhost instead in .env"
+        )
+        return
+    user_prompt = config.get("USER_PROMPT", "作为一名动画评鉴大师,请改编下面一段话使其有趣通俗易懂")
     llm_api = config.get("LLM_API")
-    data = {"user_prompt": user_prompt, "content": content}
-    res = get_rq(llm_api, data=data)
-    if res.status_code == 200:
-        process_available_models(res.json())
+    data = json.dumps(
+        {
+            "model": "mistralai/mistral-7b-instruct",
+            "messages": [{"role": "user", "content": f"{user_prompt}:{content}"}],
+        }
+    )
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url=llm_api,
+                data=data,
+                headers={
+                    "Authorization": f"Bearer {openrouter_key}",
+                    "HTTP-Referer": "http://localhost:3000",  # To identify your app. Can be set to e.g. http://localhost:3000 for testing
+                    "X-Title": "dmzj_news",  # Optional. Shows on openrouter.ai
+                },
+            ) as resp:
+                resp_txt = await resp.text()
+                return resp_txt
+    except Exception as e:
+        print_warning(f"transform content failed,{e}")
+        logger.warning(f"transform content failed,{e}")
 
 
 async def process_img(img_page_count, start_index):
@@ -371,7 +406,6 @@ def check_proxy(p):
         print_warning(f"proxy {p} is invalid,use localhost instead")
         logger.warning(f"proxy {p} is invalid,use localhost instead")
         return False
-    return True
 
 
 if __name__ == "__main__":
@@ -383,10 +417,5 @@ if __name__ == "__main__":
     print_info(f"proxy is {proxy}")
     logger.info(f"proxy is {proxy}")
     # process article and imgs
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(
-        process_article(args.article_count, args.article_start_page)
-    )
-    loop.run_until_complete(
-        process_img(args.image_download_page_count, args.img_start_page)
-    )
+    asyncio.run(process_article(args.article_count, args.article_start_page))
+    asyncio.run(process_img(args.image_download_page_count, args.img_start_page))
