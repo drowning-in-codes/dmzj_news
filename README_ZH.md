@@ -63,8 +63,8 @@ pyinstaller -F  -i dmzj.ico app.py
 ```
 
 ### Todo
-- [ x ] 使用aiohttp支持协程
-- [ x ] 增加大语言模型支持来美化内容
+- [x] 使用aiohttp支持协程
+- [x] 增加大语言模型支持来美化内容
 - [ ] 增加更多网站
 
 ### In Progress

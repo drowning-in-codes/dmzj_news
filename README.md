@@ -67,8 +67,8 @@ pyinstaller -F  -i dmzj.ico app.py
 
 ### Todo
 
-- [ x ] coroutine support using aiohttp
-- [ x ] add llm support to transform content
+- [x] coroutine support using aiohttp
+- [x] add llm support to transform content
 - [ ] add more sites
 
 ### In Progress
